@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext
 import sqlite3
 import os
+import config_manager
+import google.generativeai as genai
 
 # --- Database Setup ---
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'database')
@@ -17,10 +19,13 @@ class AdminApp:
     def __init__(self, window):
         self.window = window
         self.window.title("Admin Interface - Song Database Management")
-        self.window.geometry("1200x700")
+        self.window.geometry("1200x800")
 
         self.selected_song_id = None
         self.selected_favorite_id = None
+        self.api_key = config_manager.load_api_key()
+        if self.api_key:
+            genai.configure(api_key=self.api_key)
 
         self.create_widgets()
         self.load_songs()
@@ -28,11 +33,28 @@ class AdminApp:
 
     def create_widgets(self):
         # Main frames
-        management_frame = tk.Frame(self.window, padx=10, pady=10)
+        top_frame = tk.Frame(self.window, padx=10, pady=10)
+        top_frame.pack(side="top", fill="x")
+
+        main_content_frame = tk.Frame(self.window, padx=10, pady=10)
+        main_content_frame.pack(side="top", fill="both", expand=True)
+
+        management_frame = tk.Frame(main_content_frame, padx=10, pady=10)
         management_frame.pack(side="left", fill="both", expand=True)
 
-        favorites_frame = tk.Frame(self.window, padx=10, pady=10, bg="#f0f0f0")
+        favorites_frame = tk.Frame(main_content_frame, padx=10, pady=10, bg="#f0f0f0")
         favorites_frame.pack(side="right", fill="both", expand=True)
+
+        # --- API Key Management ---
+        api_frame = tk.Frame(top_frame)
+        api_frame.pack(fill="x", pady=5)
+
+        tk.Label(api_frame, text="Gemini API Key:", font=("Arial", 12)).pack(side="left")
+        self.api_key_entry = tk.Entry(api_frame, font=("Arial", 12), width=50, show="*")
+        self.api_key_entry.pack(side="left", padx=5)
+        if self.api_key:
+            self.api_key_entry.insert(0, self.api_key)
+        tk.Button(api_frame, text="Save Key", command=self.save_api_key).pack(side="left")
 
         # --- Song Management Widgets ---
         input_frame = tk.Frame(management_frame, padx=10, pady=10)
@@ -50,6 +72,8 @@ class AdminApp:
         tag_frame.grid(row=0, column=2, padx=10, pady=5, sticky="w")
         tk.Button(tag_frame, text="[Chorus]", command=lambda: self.insert_tag("[Chorus]\n")).pack(side="left", padx=5)
         tk.Button(tag_frame, text="[Verse]", command=lambda: self.insert_tag("[Verse]\n")).pack(side="left")
+        tk.Button(tag_frame, text="Auto-Correct with Gemini", command=self.autocorrect_lyrics, bg="#4285F4", fg="white").pack(side="left", padx=5)
+
 
         button_frame = tk.Frame(management_frame, padx=10, pady=10)
         button_frame.pack(fill="x", side="top")
@@ -87,6 +111,41 @@ class AdminApp:
         fav_scrollbar = tk.Scrollbar(fav_list_frame, orient="vertical", command=self.favorites_list.yview)
         fav_scrollbar.pack(side="right", fill="y")
         self.favorites_list.config(yscrollcommand=fav_scrollbar.set)
+
+    def save_api_key(self):
+        new_key = self.api_key_entry.get().strip()
+        if not new_key:
+            messagebox.showwarning("Input Error", "API key cannot be empty.")
+            return
+        if config_manager.save_api_key(new_key):
+            self.api_key = new_key
+            genai.configure(api_key=self.api_key)
+            messagebox.showinfo("Success", "API key saved and configured successfully.")
+        else:
+            messagebox.showerror("Error", "Failed to save API key.")
+
+    def autocorrect_lyrics(self):
+        if not self.api_key:
+            messagebox.showwarning("API Key Missing", "Please enter and save your Gemini API key first.")
+            return
+
+        original_lyrics = self.content_text.get("1.0", tk.END).strip()
+        if not original_lyrics:
+            messagebox.showwarning("Input Error", "No lyrics to correct.")
+            return
+
+        try:
+            model = genai.GenerativeModel('gemini-pro')
+            prompt = f"Please correct any spelling or grammatical errors in the following song lyrics. Preserve the original line breaks and stanza structure:\n\n{original_lyrics}"
+            response = model.generate_content(prompt)
+
+            corrected_lyrics = response.text
+            self.content_text.delete("1.0", tk.END)
+            self.content_text.insert(tk.END, corrected_lyrics)
+            messagebox.showinfo("Success", "Lyrics auto-corrected with Gemini.")
+
+        except Exception as e:
+            messagebox.showerror("Gemini API Error", f"An error occurred: {e}")
 
     def on_song_select(self, event):
         selected_indices = self.song_list.curselection()
