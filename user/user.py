@@ -120,9 +120,9 @@ class UserApp:
             if not conn: return
             cursor = conn.cursor()
             if search_term:
-                cursor.execute("SELECT id, title FROM son WHERE title LIKE ? ORDER BY title", (f"%{search_term}%",))
+                cursor.execute("SELECT id, title FROM son WHERE title LIKE ? ORDER BY title COLLATE NOCASE", (f"%{search_term}%",))
             else:
-                cursor.execute("SELECT id, title FROM son ORDER BY title")
+                cursor.execute("SELECT id, title FROM son ORDER BY title COLLATE NOCASE")
             for song in cursor.fetchall():
                 self.all_songs_list.insert(tk.END, f"{song[0]} - {song[1]}")
             conn.close()
@@ -135,7 +135,7 @@ class UserApp:
             conn = get_db_connection()
             if not conn: return
             cursor = conn.cursor()
-            cursor.execute("SELECT _id, title FROM AddSongs ORDER BY title")
+            cursor.execute("SELECT _id, title FROM AddSongs ORDER BY title COLLATE NOCASE")
             for fav in cursor.fetchall():
                 self.favorites_list.insert(tk.END, f"{fav[0]} - {fav[1]}")
             conn.close()

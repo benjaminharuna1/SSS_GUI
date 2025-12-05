@@ -211,7 +211,7 @@ class AdminApp:
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT id, title FROM son ORDER BY title")
+            cursor.execute("SELECT id, title FROM son ORDER BY title COLLATE NOCASE")
             for song in cursor.fetchall():
                 self.song_list.insert(tk.END, f"{song[0]} - {song[1]}")
             conn.close()
@@ -223,7 +223,7 @@ class AdminApp:
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT _id, title FROM AddSongs ORDER BY title")
+            cursor.execute("SELECT _id, title FROM AddSongs ORDER BY title COLLATE NOCASE")
             for fav in cursor.fetchall():
                 self.favorites_list.insert(tk.END, f"{fav[0]} - {fav[1]}")
             conn.close()
