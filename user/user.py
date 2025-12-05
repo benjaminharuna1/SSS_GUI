@@ -2,6 +2,12 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import sqlite3
 import os
+import sys
+
+# Add the project root to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import settings_manager
 
 # --- Database Setup ---
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'database', 'songs.db')
@@ -19,6 +25,8 @@ class UserApp:
         self.window = window
         self.window.title("User Interface - Song Viewer")
         self.window.geometry("1000x700")
+        self.settings = settings_manager.load_settings()
+        self.current_original_lyrics = ""
 
         self.create_widgets()
         self.load_all_songs()
@@ -79,10 +87,13 @@ class UserApp:
         title_frame = tk.Frame(right_frame)
         title_frame.pack(pady=10, fill="x")
         
-        self.song_title = tk.Label(title_frame, text="Select a Song", font=("Arial", 18, "bold"), wraplength=400)
+        self.song_title = tk.Label(title_frame, text="Select a Song", font=("Arial", 18, "bold"), wraplength=300)
         self.song_title.pack(side="left", expand=True)
         
-        tk.Button(title_frame, text="Copy Lyrics", command=self.copy_to_clipboard, bg="#2196F3", fg="white").pack(side="right", padx=5)
+        button_frame = tk.Frame(title_frame)
+        button_frame.pack(side="right", padx=5)
+        tk.Button(button_frame, text="Copy Lyrics", command=self.copy_to_clipboard, bg="#2196F3", fg="white").pack(side="left", padx=2)
+        tk.Button(button_frame, text="⚙ Settings", command=self.open_settings, bg="#607D8B", fg="white").pack(side="left", padx=2)
         
         self.song_content = scrolledtext.ScrolledText(right_frame, font=("Arial", 14), wrap="word", state="disabled")
         self.song_content.pack(fill="both", expand=True)
@@ -112,9 +123,17 @@ class UserApp:
             conn.close()
             if song:
                 self.song_title.config(text=song[0])
+                # Store original lyrics for copying
+                self.current_original_lyrics = song[1]
                 self.song_content.config(state="normal")
                 self.song_content.delete("1.0", tk.END)
-                self.song_content.insert(tk.END, song[1])
+                # Display formatted lyrics in UI
+                formatted = settings_manager.format_lyrics(
+                    song[1],
+                    self.settings['lines_per_group'],
+                    self.settings['split_verses_chorus']
+                )
+                self.song_content.insert(tk.END, formatted)
                 self.song_content.config(state="disabled")
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Failed to fetch song content: {e}")
@@ -179,9 +198,17 @@ class UserApp:
             conn.close()
             if song:
                 self.song_title.config(text=song[0])
+                # Store original lyrics for copying
+                self.current_original_lyrics = song[1]
                 self.song_content.config(state="normal")
                 self.song_content.delete("1.0", tk.END)
-                self.song_content.insert(tk.END, song[1])
+                # Display formatted lyrics in UI
+                formatted = settings_manager.format_lyrics(
+                    song[1],
+                    self.settings['lines_per_group'],
+                    self.settings['split_verses_chorus']
+                )
+                self.song_content.insert(tk.END, formatted)
                 self.song_content.config(state="disabled")
             else:
                 messagebox.showinfo("Not Found", f"No song found with ID: {song_id}")
@@ -189,15 +216,52 @@ class UserApp:
             messagebox.showerror("Database Error", f"Failed to fetch song: {e}")
 
     def copy_to_clipboard(self):
-        lyrics = self.song_content.get("1.0", tk.END).strip()
-        if not lyrics:
+        if not self.current_original_lyrics:
             messagebox.showwarning("No Content", "No lyrics to copy.")
             return
         
+        # Format the original lyrics fresh
+        formatted = settings_manager.format_lyrics(
+            self.current_original_lyrics,
+            self.settings['lines_per_group'],
+            self.settings['split_verses_chorus']
+        )
+        
         self.window.clipboard_clear()
-        self.window.clipboard_append(lyrics)
+        self.window.clipboard_append(formatted)
         self.window.update()
         messagebox.showinfo("Success", "Lyrics copied to clipboard!")
+
+    def open_settings(self):
+        settings_window = tk.Toplevel(self.window)
+        settings_window.title("Settings")
+        settings_window.geometry("400x200")
+        settings_window.resizable(False, False)
+
+        # Copy Settings Section
+        copy_frame = tk.LabelFrame(settings_window, text="Copy Formatting", padx=10, pady=10, font=("Arial", 11, "bold"))
+        copy_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.split_var = tk.BooleanVar(value=self.settings['split_verses_chorus'])
+        tk.Checkbutton(copy_frame, text="Split verses and chorus into groups", variable=self.split_var, font=("Arial", 10)).pack(anchor="w", pady=5)
+
+        lines_frame = tk.Frame(copy_frame)
+        lines_frame.pack(fill="x", pady=5)
+        tk.Label(lines_frame, text="Lines per group:", font=("Arial", 10)).pack(side="left")
+        self.lines_var = tk.IntVar(value=self.settings['lines_per_group'])
+        lines_spinbox = tk.Spinbox(lines_frame, from_=1, to=5, textvariable=self.lines_var, width=5, font=("Arial", 10))
+        lines_spinbox.pack(side="left", padx=5)
+
+        def save_settings():
+            self.settings['split_verses_chorus'] = self.split_var.get()
+            self.settings['lines_per_group'] = self.lines_var.get()
+            if settings_manager.save_settings(self.settings):
+                messagebox.showinfo("Success", "Settings saved successfully.")
+                settings_window.destroy()
+            else:
+                messagebox.showerror("Error", "Failed to save settings.")
+
+        tk.Button(copy_frame, text="Save Settings", command=save_settings, bg="#4CAF50", fg="white").pack(pady=5)
 
 if __name__ == "__main__":
     if not os.path.exists(DB_PATH):

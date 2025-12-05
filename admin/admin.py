@@ -8,6 +8,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import config_manager
+import settings_manager
 from google import genai
 
 # --- Database Setup ---
@@ -28,7 +29,9 @@ class AdminApp:
 
         self.selected_song_id = None
         self.selected_favorite_id = None
+        self.current_original_lyrics = ""
         self.api_key = config_manager.load_api_key()
+        self.settings = settings_manager.load_settings()
         if self.api_key:
             os.environ['GEMINI_API_KEY'] = self.api_key
             self.client = genai.Client()
@@ -53,16 +56,10 @@ class AdminApp:
         favorites_frame = tk.Frame(main_content_frame, padx=10, pady=10, bg="#f0f0f0")
         favorites_frame.pack(side="right", fill="both", expand=True)
 
-        # --- API Key Management ---
-        api_frame = tk.Frame(top_frame)
-        api_frame.pack(fill="x", pady=5)
-
-        tk.Label(api_frame, text="Gemini API Key:", font=("Arial", 12)).pack(side="left")
-        self.api_key_entry = tk.Entry(api_frame, font=("Arial", 12), width=50, show="*")
-        self.api_key_entry.pack(side="left", padx=5)
-        if self.api_key:
-            self.api_key_entry.insert(0, self.api_key)
-        tk.Button(api_frame, text="Save Key", command=self.save_api_key).pack(side="left")
+        # --- Top Bar with Settings Button ---
+        top_bar = tk.Frame(top_frame)
+        top_bar.pack(fill="x", pady=5)
+        tk.Button(top_bar, text="⚙ Settings", command=self.open_settings, bg="#607D8B", fg="white").pack(side="right", padx=5)
 
         # --- Song Management Widgets ---
         input_frame = tk.Frame(management_frame, padx=10, pady=10)
@@ -80,7 +77,8 @@ class AdminApp:
         tag_frame.grid(row=0, column=2, padx=10, pady=5, sticky="w")
         tk.Button(tag_frame, text="[Chorus]", command=lambda: self.insert_tag("[Chorus]\n")).pack(side="left", padx=5)
         tk.Button(tag_frame, text="[Verse]", command=lambda: self.insert_tag("[Verse]\n")).pack(side="left")
-        tk.Button(tag_frame, text="Auto-Correct with Gemini", command=self.autocorrect_lyrics, bg="#4285F4", fg="white").pack(side="left", padx=5)
+        tk.Button(tag_frame, text="Auto-Correct", command=self.autocorrect_lyrics, bg="#4285F4", fg="white").pack(side="left", padx=5)
+        tk.Button(tag_frame, text="Copy", command=self.copy_lyrics, bg="#2196F3", fg="white").pack(side="left", padx=5)
 
 
         button_frame = tk.Frame(management_frame, padx=10, pady=10)
@@ -173,8 +171,16 @@ class AdminApp:
             if song:
                 self.title_entry.delete(0, tk.END)
                 self.title_entry.insert(tk.END, song[0])
+                # Store original lyrics for copying
+                self.current_original_lyrics = song[1]
                 self.content_text.delete("1.0", tk.END)
-                self.content_text.insert(tk.END, song[1])
+                # Display formatted lyrics in UI
+                formatted = settings_manager.format_lyrics(
+                    song[1],
+                    self.settings['lines_per_group'],
+                    self.settings['split_verses_chorus']
+                )
+                self.content_text.insert(tk.END, formatted)
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Failed to fetch song: {e}")
 
@@ -184,9 +190,23 @@ class AdminApp:
         selected_item = self.favorites_list.get(selected_indices[0])
         self.selected_favorite_id = selected_item.split(" - ")[0]
 
+    def get_original_lyrics(self):
+        """Extract original unformatted lyrics from the displayed text."""
+        displayed = self.content_text.get("1.0", tk.END).strip()
+        # If splitting is disabled, return as-is
+        if not self.settings['split_verses_chorus']:
+            return displayed
+        # Otherwise, we need to reverse the formatting by removing extra blank lines between groups
+        lines = displayed.split('\n')
+        original_lines = []
+        for line in lines:
+            if line.strip():
+                original_lines.append(line)
+        return '\n'.join(original_lines)
+
     def add_song(self):
         title = self.title_entry.get().strip()
-        content = self.content_text.get("1.0", tk.END).strip()
+        content = self.get_original_lyrics()
         if not title or not content:
             messagebox.showwarning("Input Error", "Title and content are required.")
             return
@@ -207,7 +227,7 @@ class AdminApp:
             messagebox.showwarning("Selection Error", "Select a song to update.")
             return
         title = self.title_entry.get().strip()
-        content = self.content_text.get("1.0", tk.END).strip()
+        content = self.get_original_lyrics()
         if not title or not content:
             messagebox.showwarning("Input Error", "Title and content are required.")
             return
@@ -308,6 +328,79 @@ class AdminApp:
 
     def insert_tag(self, tag):
         self.content_text.insert(tk.INSERT, tag)
+
+    def copy_lyrics(self):
+        if not self.current_original_lyrics:
+            messagebox.showwarning("No Content", "No lyrics to copy.")
+            return
+        
+        # Format the original lyrics fresh
+        formatted = settings_manager.format_lyrics(
+            self.current_original_lyrics,
+            self.settings['lines_per_group'],
+            self.settings['split_verses_chorus']
+        )
+        
+        self.window.clipboard_clear()
+        self.window.clipboard_append(formatted)
+        self.window.update()
+        messagebox.showinfo("Success", "Lyrics copied to clipboard!")
+
+    def open_settings(self):
+        settings_window = tk.Toplevel(self.window)
+        settings_window.title("Settings")
+        settings_window.geometry("400x300")
+        settings_window.resizable(False, False)
+
+        # API Key Section
+        api_frame = tk.LabelFrame(settings_window, text="Gemini API Key", padx=10, pady=10, font=("Arial", 11, "bold"))
+        api_frame.pack(fill="x", padx=10, pady=10)
+
+        tk.Label(api_frame, text="API Key:", font=("Arial", 10)).pack(anchor="w")
+        api_entry = tk.Entry(api_frame, font=("Arial", 10), width=40, show="*")
+        api_entry.pack(fill="x", pady=5)
+        if self.api_key:
+            api_entry.insert(0, self.api_key)
+
+        def save_api():
+            new_key = api_entry.get().strip()
+            if not new_key:
+                messagebox.showwarning("Input Error", "API key cannot be empty.")
+                return
+            if config_manager.save_api_key(new_key):
+                self.api_key = new_key
+                os.environ['GEMINI_API_KEY'] = self.api_key
+                self.client = genai.Client()
+                messagebox.showinfo("Success", "API key saved successfully.")
+            else:
+                messagebox.showerror("Error", "Failed to save API key.")
+
+        tk.Button(api_frame, text="Save API Key", command=save_api, bg="#4CAF50", fg="white").pack(pady=5)
+
+        # Copy Settings Section
+        copy_frame = tk.LabelFrame(settings_window, text="Copy Formatting", padx=10, pady=10, font=("Arial", 11, "bold"))
+        copy_frame.pack(fill="x", padx=10, pady=10)
+
+        self.split_var = tk.BooleanVar(value=self.settings['split_verses_chorus'])
+        tk.Checkbutton(copy_frame, text="Split verses and chorus into groups", variable=self.split_var, font=("Arial", 10)).pack(anchor="w", pady=5)
+
+        lines_frame = tk.Frame(copy_frame)
+        lines_frame.pack(fill="x", pady=5)
+        tk.Label(lines_frame, text="Lines per group:", font=("Arial", 10)).pack(side="left")
+        self.lines_var = tk.IntVar(value=self.settings['lines_per_group'])
+        lines_spinbox = tk.Spinbox(lines_frame, from_=1, to=5, textvariable=self.lines_var, width=5, font=("Arial", 10))
+        lines_spinbox.pack(side="left", padx=5)
+
+        def save_settings():
+            self.settings['split_verses_chorus'] = self.split_var.get()
+            self.settings['lines_per_group'] = self.lines_var.get()
+            if settings_manager.save_settings(self.settings):
+                messagebox.showinfo("Success", "Settings saved successfully.")
+                settings_window.destroy()
+            else:
+                messagebox.showerror("Error", "Failed to save settings.")
+
+        tk.Button(copy_frame, text="Save Settings", command=save_settings, bg="#4CAF50", fg="white").pack(pady=5)
 
 if __name__ == "__main__":
     try:
