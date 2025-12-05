@@ -2,6 +2,11 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext
 import sqlite3
 import os
+import sys
+
+# Add the project root to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import config_manager
 import google.generativeai as genai
 
