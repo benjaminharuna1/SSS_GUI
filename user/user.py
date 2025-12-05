@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext
 import sqlite3
 import os
 
@@ -18,106 +18,118 @@ class UserApp:
     def __init__(self, window):
         self.window = window
         self.window.title("User Interface - Song Viewer")
-        self.window.geometry("900x700")
+        self.window.geometry("1000x700")
 
         self.create_widgets()
-        self.load_songs()
+        self.load_all_songs()
+        self.load_favorite_songs()
 
     def create_widgets(self):
-        # Frame for the song list and search
+        # Main frames
         left_frame = tk.Frame(self.window, padx=10, pady=10)
         left_frame.pack(side="left", fill="y")
 
-        # Search functionality
-        search_frame = tk.Frame(left_frame)
-        search_frame.pack(fill="x", pady=5)
-
-        tk.Label(search_frame, text="Search:", font=("Arial", 12)).pack(side="left")
-        self.search_entry = tk.Entry(search_frame, font=("Arial", 12), width=30)
-        self.search_entry.pack(side="left", fill="x", expand=True)
-        self.search_entry.bind("<KeyRelease>", self.search_songs)
-
-        # Song Listbox
-        self.song_list = tk.Listbox(left_frame, font=("Arial", 12), width=40, height=30)
-        self.song_list.pack(side="left", fill="y", expand=True)
-        self.song_list.bind("<<ListboxSelect>>", self.on_song_select)
-
-        # Scrollbar for the listbox
-        scrollbar = tk.Scrollbar(left_frame, orient="vertical", command=self.song_list.yview)
-        scrollbar.pack(side="right", fill="y")
-        self.song_list.config(yscrollcommand=scrollbar.set)
-
-        # Frame for displaying song content
         right_frame = tk.Frame(self.window, padx=10, pady=10)
         right_frame.pack(side="right", fill="both", expand=True)
 
+        # Tabbed interface for song lists
+        self.notebook = ttk.Notebook(left_frame)
+        self.notebook.pack(expand=True, fill="both")
+
+        # --- All Songs Tab ---
+        all_songs_frame = ttk.Frame(self.notebook, width=400, height=600)
+        self.notebook.add(all_songs_frame, text="All Songs")
+
+        search_frame = tk.Frame(all_songs_frame)
+        search_frame.pack(fill="x", pady=5)
+        tk.Label(search_frame, text="Search:", font=("Arial", 12)).pack(side="left")
+        self.search_entry = tk.Entry(search_frame, font=("Arial", 12), width=30)
+        self.search_entry.pack(side="left", fill="x", expand=True)
+        self.search_entry.bind("<KeyRelease>", self.filter_all_songs)
+
+        self.all_songs_list = tk.Listbox(all_songs_frame, font=("Arial", 12))
+        self.all_songs_list.pack(fill="both", expand=True)
+        self.all_songs_list.bind("<<ListboxSelect>>", self.on_song_select)
+
+        # --- Favorites Tab ---
+        favorites_frame = ttk.Frame(self.notebook, width=400, height=600)
+        self.notebook.add(favorites_frame, text="Favorites")
+
+        self.favorites_list = tk.Listbox(favorites_frame, font=("Arial", 12))
+        self.favorites_list.pack(fill="both", expand=True)
+        self.favorites_list.bind("<<ListboxSelect>>", self.on_favorite_select)
+
+        # --- Song Content Display ---
         self.song_title = tk.Label(right_frame, text="Select a Song", font=("Arial", 18, "bold"), wraplength=500)
         self.song_title.pack(pady=10)
-
         self.song_content = scrolledtext.ScrolledText(right_frame, font=("Arial", 14), wrap="word", state="disabled")
         self.song_content.pack(fill="both", expand=True)
 
     def on_song_select(self, event):
-        """Displays the content of the selected song."""
-        selected_indices = self.song_list.curselection()
-        if not selected_indices:
-            return
+        self.display_song_content(self.all_songs_list, "son")
 
-        selected_song_item = self.song_list.get(selected_indices[0])
-        song_id = selected_song_item.split(" - ")[0]
+    def on_favorite_select(self, event):
+        self.display_song_content(self.favorites_list, "AddSongs")
+
+    def display_song_content(self, listbox, table_name):
+        selected_indices = listbox.curselection()
+        if not selected_indices: return
+
+        selected_item = listbox.get(selected_indices[0])
+        song_id = selected_item.split(" - ")[0]
 
         try:
             conn = get_db_connection()
-            if not conn:
-                return
-
+            if not conn: return
             cursor = conn.cursor()
-            cursor.execute("SELECT title, content FROM son WHERE id=?", (song_id,))
+            id_column = "id" if table_name == "son" else "_id"
+            cursor.execute(f"SELECT title, content FROM {table_name} WHERE {id_column}=?", (song_id,))
             song = cursor.fetchone()
             conn.close()
-
             if song:
                 self.song_title.config(text=song[0])
                 self.song_content.config(state="normal")
                 self.song_content.delete("1.0", tk.END)
                 self.song_content.insert(tk.END, song[1])
                 self.song_content.config(state="disabled")
-
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Failed to fetch song content: {e}")
 
-    def load_songs(self, search_term=""):
-        """Loads songs from the database, optionally filtered by a search term."""
-        self.song_list.delete(0, tk.END)
+    def load_all_songs(self, search_term=""):
+        self.all_songs_list.delete(0, tk.END)
         try:
             conn = get_db_connection()
-            if not conn:
-                return
-
+            if not conn: return
             cursor = conn.cursor()
             if search_term:
                 cursor.execute("SELECT id, title FROM son WHERE title LIKE ? ORDER BY title", (f"%{search_term}%",))
             else:
                 cursor.execute("SELECT id, title FROM son ORDER BY title")
-
-            songs = cursor.fetchall()
+            for song in cursor.fetchall():
+                self.all_songs_list.insert(tk.END, f"{song[0]} - {song[1]}")
             conn.close()
-
-            for song in songs:
-                self.song_list.insert(tk.END, f"{song[0]} - {song[1]}")
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Failed to load songs: {e}")
 
-    def search_songs(self, event):
-        """Filters the song list based on the search term."""
-        search_term = self.search_entry.get().strip()
-        self.load_songs(search_term)
+    def load_favorite_songs(self):
+        self.favorites_list.delete(0, tk.END)
+        try:
+            conn = get_db_connection()
+            if not conn: return
+            cursor = conn.cursor()
+            cursor.execute("SELECT _id, title FROM AddSongs ORDER BY title")
+            for fav in cursor.fetchall():
+                self.favorites_list.insert(tk.END, f"{fav[0]} - {fav[1]}")
+            conn.close()
+        except sqlite3.Error as e:
+            messagebox.showerror("Database Error", f"Failed to load favorites: {e}")
 
-# --- Main Execution ---
+    def filter_all_songs(self, event):
+        self.load_all_songs(self.search_entry.get().strip())
+
 if __name__ == "__main__":
-    # Check for the database before starting the app
     if not os.path.exists(DB_PATH):
-        messagebox.showerror("Database Error", "The song database was not found. Please run the admin interface to create it.")
+        messagebox.showerror("Database Error", "The song database was not found.")
         exit()
 
     root = tk.Tk()
