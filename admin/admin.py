@@ -8,7 +8,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import config_manager
-import google.generativeai as genai
+from google import genai
 
 # --- Database Setup ---
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'database')
@@ -30,7 +30,10 @@ class AdminApp:
         self.selected_favorite_id = None
         self.api_key = config_manager.load_api_key()
         if self.api_key:
-            genai.configure(api_key=self.api_key)
+            os.environ['GEMINI_API_KEY'] = self.api_key
+            self.client = genai.Client()
+        else:
+            self.client = None
 
         self.create_widgets()
         self.load_songs()
@@ -124,13 +127,14 @@ class AdminApp:
             return
         if config_manager.save_api_key(new_key):
             self.api_key = new_key
-            genai.configure(api_key=self.api_key)
+            os.environ['GEMINI_API_KEY'] = self.api_key
+            self.client = genai.Client()
             messagebox.showinfo("Success", "API key saved and configured successfully.")
         else:
             messagebox.showerror("Error", "Failed to save API key.")
 
     def autocorrect_lyrics(self):
-        if not self.api_key:
+        if not self.client:
             messagebox.showwarning("API Key Missing", "Please enter and save your Gemini API key first.")
             return
 
@@ -140,9 +144,11 @@ class AdminApp:
             return
 
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
             prompt = f"Please correct any spelling or grammatical errors in the following song lyrics. Preserve the original line breaks and stanza structure:\n\n{original_lyrics}"
-            response = model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
 
             corrected_lyrics = response.text
             self.content_text.delete("1.0", tk.END)

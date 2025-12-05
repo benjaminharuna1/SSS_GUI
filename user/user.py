@@ -76,8 +76,14 @@ class UserApp:
         self.index_list.bind("<<ListboxSelect>>", self.on_index_select)
 
         # --- Song Content Display ---
-        self.song_title = tk.Label(right_frame, text="Select a Song", font=("Arial", 18, "bold"), wraplength=500)
-        self.song_title.pack(pady=10)
+        title_frame = tk.Frame(right_frame)
+        title_frame.pack(pady=10, fill="x")
+        
+        self.song_title = tk.Label(title_frame, text="Select a Song", font=("Arial", 18, "bold"), wraplength=400)
+        self.song_title.pack(side="left", expand=True)
+        
+        tk.Button(title_frame, text="Copy Lyrics", command=self.copy_to_clipboard, bg="#2196F3", fg="white").pack(side="right", padx=5)
+        
         self.song_content = scrolledtext.ScrolledText(right_frame, font=("Arial", 14), wrap="word", state="disabled")
         self.song_content.pack(fill="both", expand=True)
 
@@ -181,6 +187,17 @@ class UserApp:
                 messagebox.showinfo("Not Found", f"No song found with ID: {song_id}")
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Failed to fetch song: {e}")
+
+    def copy_to_clipboard(self):
+        lyrics = self.song_content.get("1.0", tk.END).strip()
+        if not lyrics:
+            messagebox.showwarning("No Content", "No lyrics to copy.")
+            return
+        
+        self.window.clipboard_clear()
+        self.window.clipboard_append(lyrics)
+        self.window.update()
+        messagebox.showinfo("Success", "Lyrics copied to clipboard!")
 
 if __name__ == "__main__":
     if not os.path.exists(DB_PATH):
