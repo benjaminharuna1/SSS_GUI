@@ -140,7 +140,7 @@ class AdminApp:
             return
 
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-1.5-flash-latest')
             prompt = f"Please correct any spelling or grammatical errors in the following song lyrics. Preserve the original line breaks and stanza structure:\n\n{original_lyrics}"
             response = model.generate_content(prompt)
 
