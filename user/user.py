@@ -23,6 +23,7 @@ class UserApp:
         self.create_widgets()
         self.load_all_songs()
         self.load_favorite_songs()
+        self.load_indexed_songs()
 
     def create_widgets(self):
         # Main frames
@@ -42,7 +43,7 @@ class UserApp:
 
         search_frame = tk.Frame(all_songs_frame)
         search_frame.pack(fill="x", pady=5)
-        tk.Label(search_frame, text="Search:", font=("Arial", 12)).pack(side="left")
+        tk.Label(search_frame, text="Search by Title:", font=("Arial", 12)).pack(side="left")
         self.search_entry = tk.Entry(search_frame, font=("Arial", 12), width=30)
         self.search_entry.pack(side="left", fill="x", expand=True)
         self.search_entry.bind("<KeyRelease>", self.filter_all_songs)
@@ -59,6 +60,21 @@ class UserApp:
         self.favorites_list.pack(fill="both", expand=True)
         self.favorites_list.bind("<<ListboxSelect>>", self.on_favorite_select)
 
+        # --- Index Tab ---
+        index_frame = ttk.Frame(self.notebook, width=400, height=600)
+        self.notebook.add(index_frame, text="Index")
+
+        id_search_frame = tk.Frame(index_frame)
+        id_search_frame.pack(fill="x", pady=5)
+        tk.Label(id_search_frame, text="Search by ID:", font=("Arial", 12)).pack(side="left")
+        self.id_search_entry = tk.Entry(id_search_frame, font=("Arial", 12), width=10)
+        self.id_search_entry.pack(side="left")
+        tk.Button(id_search_frame, text="Search", command=self.search_by_id).pack(side="left")
+
+        self.index_list = tk.Listbox(index_frame, font=("Arial", 12))
+        self.index_list.pack(fill="both", expand=True)
+        self.index_list.bind("<<ListboxSelect>>", self.on_index_select)
+
         # --- Song Content Display ---
         self.song_title = tk.Label(right_frame, text="Select a Song", font=("Arial", 18, "bold"), wraplength=500)
         self.song_title.pack(pady=10)
@@ -66,12 +82,15 @@ class UserApp:
         self.song_content.pack(fill="both", expand=True)
 
     def on_song_select(self, event):
-        self.display_song_content(self.all_songs_list, "son")
+        self.display_song_content(self.all_songs_list, "son", "id")
 
     def on_favorite_select(self, event):
-        self.display_song_content(self.favorites_list, "AddSongs")
+        self.display_song_content(self.favorites_list, "AddSongs", "_id")
 
-    def display_song_content(self, listbox, table_name):
+    def on_index_select(self, event):
+        self.display_song_content(self.index_list, "son", "id")
+
+    def display_song_content(self, listbox, table_name, id_column):
         selected_indices = listbox.curselection()
         if not selected_indices: return
 
@@ -82,7 +101,6 @@ class UserApp:
             conn = get_db_connection()
             if not conn: return
             cursor = conn.cursor()
-            id_column = "id" if table_name == "son" else "_id"
             cursor.execute(f"SELECT title, content FROM {table_name} WHERE {id_column}=?", (song_id,))
             song = cursor.fetchone()
             conn.close()
@@ -124,8 +142,45 @@ class UserApp:
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Failed to load favorites: {e}")
 
+    def load_indexed_songs(self):
+        self.index_list.delete(0, tk.END)
+        try:
+            conn = get_db_connection()
+            if not conn: return
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, title FROM son ORDER BY id")
+            for song in cursor.fetchall():
+                self.index_list.insert(tk.END, f"{song[0]} - {song[1]}")
+            conn.close()
+        except sqlite3.Error as e:
+            messagebox.showerror("Database Error", f"Failed to load songs: {e}")
+
     def filter_all_songs(self, event):
         self.load_all_songs(self.search_entry.get().strip())
+
+    def search_by_id(self):
+        song_id = self.id_search_entry.get().strip()
+        if not song_id.isdigit():
+            messagebox.showwarning("Invalid Input", "Please enter a valid song ID (number).")
+            return
+
+        try:
+            conn = get_db_connection()
+            if not conn: return
+            cursor = conn.cursor()
+            cursor.execute("SELECT title, content FROM son WHERE id=?", (song_id,))
+            song = cursor.fetchone()
+            conn.close()
+            if song:
+                self.song_title.config(text=song[0])
+                self.song_content.config(state="normal")
+                self.song_content.delete("1.0", tk.END)
+                self.song_content.insert(tk.END, song[1])
+                self.song_content.config(state="disabled")
+            else:
+                messagebox.showinfo("Not Found", f"No song found with ID: {song_id}")
+        except sqlite3.Error as e:
+            messagebox.showerror("Database Error", f"Failed to fetch song: {e}")
 
 if __name__ == "__main__":
     if not os.path.exists(DB_PATH):
